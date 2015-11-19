@@ -8,9 +8,9 @@
 //
 //If you already have the access token (and secret) for your user (Twitter provides this for your own account on the developer portal), creating the client is simple:
 //
-//  anaconda.SetConsumerKey("your-consumer-key")
-//  anaconda.SetConsumerSecret("your-consumer-secret")
 //  api := anaconda.NewTwitterApi("your-access-token", "your-access-token-secret")
+//  api.SetConsumerKey("your-consumer-key")
+//  api.SetConsumerSecret("your-consumer-secret")
 //
 //
 //Queries
@@ -60,18 +60,13 @@ const (
 	UploadBaseUrl = "https://upload.twitter.com/1.1"
 )
 
-var oauthClient = oauth.Client{
-	TemporaryCredentialRequestURI: "https://api.twitter.com/oauth/request_token",
-	ResourceOwnerAuthorizationURI: "https://api.twitter.com/oauth/authenticate",
-	TokenRequestURI:               "https://api.twitter.com/oauth/access_token",
-}
-
 type TwitterApi struct {
 	Credentials          *oauth.Credentials
 	queryQueue           chan query
 	bucket               *tokenbucket.Bucket
 	returnRateLimitError bool
 	HttpClient           *http.Client
+    oauthClient         *oauth.Client
 
 	// Currently used only for the streaming API
 	// and for checking rate-limiting headers
@@ -116,6 +111,11 @@ func NewTwitterApi(access_token string, access_token_secret string) *TwitterApi 
 		HttpClient:           http.DefaultClient,
 		Log:                  silentLogger{},
 		baseUrl:              BaseUrl,
+        oauthClient: &oauth.Client{
+            TemporaryCredentialRequestURI: "https://api.twitter.com/oauth/request_token",
+            ResourceOwnerAuthorizationURI: "https://api.twitter.com/oauth/authenticate",
+            TokenRequestURI:               "https://api.twitter.com/oauth/access_token",
+        },
 	}
 	go c.throttledQuery()
 	return c
@@ -123,14 +123,14 @@ func NewTwitterApi(access_token string, access_token_secret string) *TwitterApi 
 
 //SetConsumerKey will set the application-specific consumer_key used in the initial OAuth process
 //This key is listed on https://dev.twitter.com/apps/YOUR_APP_ID/show
-func SetConsumerKey(consumer_key string) {
-	oauthClient.Credentials.Token = consumer_key
+func (c *TwitterApi) SetConsumerKey(consumer_key string) {
+	c.oauthClient.Credentials.Token = consumer_key
 }
 
 //SetConsumerSecret will set the application-specific secret used in the initial OAuth process
 //This secret is listed on https://dev.twitter.com/apps/YOUR_APP_ID/show
-func SetConsumerSecret(consumer_secret string) {
-	oauthClient.Credentials.Secret = consumer_secret
+func (c *TwitterApi) SetConsumerSecret(consumer_secret string) {
+	c.oauthClient.Credentials.Secret = consumer_secret
 }
 
 // ReturnRateLimitError specifies behavior when the Twitter API returns a rate-limit error.
@@ -168,16 +168,16 @@ func (c *TwitterApi) SetBaseUrl(baseUrl string) {
 //AuthorizationURL generates the authorization URL for the first part of the OAuth handshake.
 //Redirect the user to this URL.
 //This assumes that the consumer key has already been set (using SetConsumerKey).
-func AuthorizationURL(callback string) (string, *oauth.Credentials, error) {
-	tempCred, err := oauthClient.RequestTemporaryCredentials(http.DefaultClient, callback, nil)
+func (c *TwitterApi) AuthorizationURL(callback string) (string, *oauth.Credentials, error) {
+	tempCred, err := c.oauthClient.RequestTemporaryCredentials(http.DefaultClient, callback, nil)
 	if err != nil {
 		return "", nil, err
 	}
-	return oauthClient.AuthorizationURL(tempCred, nil), tempCred, nil
+	return c.oauthClient.AuthorizationURL(tempCred, nil), tempCred, nil
 }
 
-func GetCredentials(tempCred *oauth.Credentials, verifier string) (*oauth.Credentials, url.Values, error) {
-	return oauthClient.RequestToken(http.DefaultClient, tempCred, verifier)
+func (c *TwitterApi) GetCredentials(tempCred *oauth.Credentials, verifier string) (*oauth.Credentials, url.Values, error) {
+	return c.oauthClient.RequestToken(http.DefaultClient, tempCred, verifier)
 }
 
 func cleanValues(v url.Values) url.Values {
@@ -189,7 +189,7 @@ func cleanValues(v url.Values) url.Values {
 
 // apiGet issues a GET request to the Twitter API and decodes the response JSON to data.
 func (c TwitterApi) apiGet(urlStr string, form url.Values, data interface{}) error {
-	resp, err := oauthClient.Get(c.HttpClient, c.Credentials, urlStr, form)
+	resp, err := c.oauthClient.Get(c.HttpClient, c.Credentials, urlStr, form)
 	if err != nil {
 		return err
 	}
@@ -199,7 +199,7 @@ func (c TwitterApi) apiGet(urlStr string, form url.Values, data interface{}) err
 
 // apiPost issues a POST request to the Twitter API and decodes the response JSON to data.
 func (c TwitterApi) apiPost(urlStr string, form url.Values, data interface{}) error {
-	resp, err := oauthClient.Post(c.HttpClient, c.Credentials, urlStr, form)
+	resp, err := c.oauthClient.Post(c.HttpClient, c.Credentials, urlStr, form)
 	if err != nil {
 		return err
 	}
